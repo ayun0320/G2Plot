@@ -12,9 +12,11 @@ import {
   flatten,
   reduce,
   findIndex,
+  filter,
 } from '@antv/util';
-import { View, BBox } from '../dependents';
+import { View, BBox, Geometry } from '../dependents';
 import TextDescription from '../components/description';
+import BaseLabel, { LabelComponentConfig, getLabelComponent } from '../components/label/label';
 import { getComponent } from '../components/factory';
 import Interaction from '../interaction/core';
 import BaseInteraction, { InteractionCtor } from '../interaction/index';
@@ -36,6 +38,7 @@ import StateController from './controller/state';
 import ThemeController from './controller/theme';
 import Layer, { LayerConfig } from './layer';
 import { isTextUsable } from '../util/common';
+import { getAllGeometryByType } from '../util/view';
 import { LooseMap } from '../interface/types';
 
 export interface ViewConfig {
@@ -167,6 +170,7 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
   protected themeController: ThemeController;
   public config: G2Config;
   protected interactions: Interaction[] = [];
+  protected labels: BaseLabel[] = [];
 
   constructor(props: T) {
     super(props);
@@ -225,6 +229,7 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
       views: [],
     };
 
+    this.labels = [];
     this.paddingController.clear();
 
     this.drawTitle();
@@ -319,6 +324,13 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
   // plot 不断销毁重建，需要一个api获取最新的plot
   public getPlot() {
     return this.view;
+  }
+
+  /**
+   * 获取已渲染的数据标签组件
+   */
+  public getLabels() {
+    return this.labels;
   }
 
   // 获取对应的G2 Theme
@@ -609,9 +621,25 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
     }
   }
 
+  protected doRenderLabel(geometry: Geometry, label: Label) {
+    const config: LabelComponentConfig = {
+      layer: this,
+      container: geometry.labelsContainer,
+      geometry,
+      label,
+    };
+    const Ctor = getLabelComponent(label.type);
+    if (Ctor) {
+      const label = new Ctor(config);
+      label.render();
+      this.labels.push(label);
+    }
+  }
+
   /** 抽取destroy和updateConfig共有代码为_destroy方法 */
   private doDestroy() {
     this.doDestroyInteractions();
+    this.doDestroyLabels();
     /** 销毁g2.view实例 */
     if (!this.view.destroyed) {
       this.view.destroy();
@@ -626,6 +654,14 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
       });
     }
     this.interactions = [];
+  }
+
+  private doDestroyLabels() {
+    // 移除各 geometry 的 label
+    each(this.labels, (label: BaseLabel) => {
+      label.destroy();
+    });
+    this.labels = [];
   }
 
   protected getViewRange() {
